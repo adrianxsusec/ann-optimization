@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import optimize
 from functools import partial
+from line_profiler import profile
 
 """
 Create Your Own Artificial Neural Network for Multi-class Classification (With Python)
@@ -34,7 +35,8 @@ def predict(Theta1, Theta2, X):
 	
 	m = np.shape(X)[0]                    # number of training values
 	num_labels = np.shape(Theta2)[0]
-	
+
+	# todo: GPU opt
 	a1 = np.hstack((np.ones((m,1)), X))   # add bias (input layer)
 	a2 = g(a1 @ Theta1.T)                 # apply sigmoid: input layer --> hidden layer
 	a2 = np.hstack((np.ones((m,1)), a2))  # add bias (hidden layer)
@@ -73,7 +75,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 	m = len(y)
 	
 	# Feedforward: calculate the cost function J:
-	
+	# todo: GPU opt
 	a1 = np.hstack((np.ones((m,1)), X))   
 	a2 = g(a1 @ Theta1.T)                 
 	a2 = np.hstack((np.ones((m,1)), a2))  
@@ -91,7 +93,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 	
 	return J
 
-
+@profile
 def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
 	""" Neural net cost function gradient for a three layer classification network.
 	Input:
@@ -151,7 +153,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
 
 
 N_iter = 1
-J_min = np.Inf
+J_min = np.inf
 theta_best = []
 Js_train = np.array([])
 Js_test = np.array([])
@@ -184,8 +186,8 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
 		J_min = J_test
 	# Update Plot
 	iters = np.arange(len(Js_train))
-	plt.clf()
-	plt.subplot(2,1,1)
+	# plt.clf()
+	# plt.subplot(2,1,1)
 	im_size = 32
 	pad = 4
 	galaxies_image = np.zeros((3*im_size,6*im_size+2*pad), dtype=int) + 255
@@ -198,22 +200,23 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
 			galaxies_image[ii:ii+im_size,jj:jj+im_size] = X[idx].reshape(im_size,im_size) * 255
 			my_label = 'E' if y_pred[idx]==0 else 'S' if y_pred[idx]==1 else 'I'
 			my_color = 'blue' if (y_pred[idx]==y[idx]) else 'red'
-			plt.text(jj+2, ii+10, my_label, color=my_color)
+			# plt.text(jj+2, ii+10, my_label, color=my_color)
 			if (y_pred[idx]==y[idx]):
-				plt.text(jj+4, ii+25, "✓", color='blue', fontsize=50)
-	plt.imshow(galaxies_image, cmap='gray')
-	plt.gca().axis('off')
-	plt.subplot(2,1,2)
-	plt.plot(iters, Js_test, 'r', label='test')
-	plt.plot(iters, Js_train, 'b', label='train')
-	plt.xlabel("iteration")
-	plt.ylabel("cost")
-	plt.xlim(0,600)
-	plt.ylim(1,2.1)
-	plt.gca().legend()
-	plt.pause(0.001)
+				pass
+				# plt.text(jj+4, ii+25, "✓", color='blue', fontsize=50)
+	# plt.imshow(galaxies_image, cmap='gray')
+	# plt.gca().axis('off')
+	# plt.subplot(2,1,2)
+	# plt.plot(iters, Js_test, 'r', label='test')
+	# plt.plot(iters, Js_train, 'b', label='train')
+	# plt.xlabel("iteration")
+	# plt.ylabel("cost")
+	# plt.xlim(0,600)
+	# plt.ylim(1,2.1)
+	# plt.gca().legend()
+	# plt.pause(0.001)
 
-
+@profile
 def main():
 	""" Artificial Neural Network for classifying galaxies """
 	
@@ -221,8 +224,8 @@ def main():
 	np.random.seed(917)
 	
 	# Load the training and test datasets
-	train = np.genfromtxt('train.csv', delimiter=',')
-	test = np.genfromtxt('test.csv', delimiter=',')
+	train = np.genfromtxt('../../ann-optimization/train.csv', delimiter=',')
+	test = np.genfromtxt('../../ann-optimization/test.csv', delimiter=',')
 	
 	# get labels (0=Elliptical, 1=Spiral, 2=Irregular)
 	train_label = train[:,0].reshape(len(train),1)
@@ -235,7 +238,7 @@ def main():
 	# Construct our data matrix X (2700 x 5000)
 	X = train
 
-    # Construct our label vector y (2700 x 1)
+	# Construct our label vector y (2700 x 1)
 	y = train_label
 	
 	# Two layer Neural Network parameters:
@@ -262,12 +265,12 @@ def main():
 	Js_test = np.array([J_test])
 
 	# prep figure
-	fig = plt.figure(figsize=(6,6), dpi=80)
+	# fig = plt.figure(figsize=(6,6), dpi=80)
 
 	# Minimize the cost function using a nonlinear conjugate gradient algorithm
 	args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)  # parameter values
 	cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-	theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=600)
+	theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=500)
 
 	# unflatten theta
 	Theta1, Theta2 = reshape(theta_best, input_layer_size, hidden_layer_size, num_labels)
@@ -281,13 +284,13 @@ def main():
 	print('accuracy on test set =', np.sum(1.*(test_pred==test_label))/len(test_label))	
 			
 	# Save figure
-	plt.savefig('artificialneuralnetwork.png',dpi=240)
-	plt.show()
+	# plt.savefig('artificialneuralnetwork.png',dpi=240)
+	# plt.show()
 	    
-	return 0
+
 
 
 
 if __name__== "__main__":
-  main()
+	main()
 
