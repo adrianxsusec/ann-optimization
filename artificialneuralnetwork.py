@@ -10,6 +10,10 @@ Philip Mocz (2023), @PMocz
 
 Create and train your own artificial neural network to classify images of galaxies from SDSS/the Galaxy Zoo project.
 
+AMENDED FILE FOR PROFILING
+- Outcommented pyplot calls 
+- set maxiter in main scipy.optimize.minimize call to a number below inf, e.g. 50
+
 """
 
 def g(x):
@@ -270,7 +274,7 @@ def main():
 	# Minimize the cost function using a nonlinear conjugate gradient algorithm
 	args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)  # parameter values
 	cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-	theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=500)
+	theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=50)
 
 	# unflatten theta
 	Theta1, Theta2 = reshape(theta_best, input_layer_size, hidden_layer_size, num_labels)
