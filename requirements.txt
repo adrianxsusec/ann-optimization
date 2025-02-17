@@ -1,0 +1,7 @@
+# required packages for repository:
+numpy == 2.2.2
+cython == 3.0.12
+torch == 2.6.0
+matplotlib~=3.10.0
+scipy
+line_profiler~=4.2.0
