@@ -129,6 +129,7 @@ def _gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels):
     Delta1 = np.zeros_like(Theta1)
     Delta2 = np.zeros_like(Theta2)
 
+    # TODO: torch + vectorization
     for t in batch_indices:
         # Forward pass
         a1 = X[t, :].reshape((Theta1.shape[1] - 1, 1))
