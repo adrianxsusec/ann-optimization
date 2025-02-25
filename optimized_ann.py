@@ -1,3 +1,4 @@
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import optimize
@@ -8,6 +9,8 @@ import torch
 from numba import jit
 import logging
 from time import time
+
+matplotlib.use("TkAgg")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -112,7 +115,8 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 
         # One-hot encode y
         y_mtx = np.zeros((m, num_labels))
-        y_mtx[np.arange(m), y.flatten()] = 1
+        y_mtx[np.arange(m), y.flatten().astype(int)] = 1
+
 
         J = np.sum(-y_mtx * np.log(a3) - (1 - y_mtx) * np.log(1 - a3)) / m
         J += lmbda / (2 * m) * (np.sum(Theta1[:, 1:] ** 2) + np.sum(Theta2[:, 1:] ** 2))
@@ -270,11 +274,8 @@ def main():
     # Set random seed
     np.random.seed(917)
 
-    # Load and prepare data with parallel processing
-    with mp.Pool() as pool:
-        train, test = pool.map(np.genfromtxt,
-                               [('../../ann-optimization/train.csv', {'delimiter': ','}),
-                                ('../../ann-optimization/test.csv', {'delimiter': ','})])
+    train = np.genfromtxt('../ann-optimization/train.csv', delimiter=',')
+    test = np.genfromtxt('../ann-optimization/test.csv', delimiter=',')
 
     logger.info(f"Data loaded in {time() - start_time:.2f}s")
 
