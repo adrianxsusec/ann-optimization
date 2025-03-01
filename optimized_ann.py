@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from scipy import optimize
 from functools import partial
 from line_profiler import profile
@@ -9,6 +10,7 @@ import torch
 from numba import jit
 import logging
 from time import time
+import pandas as pd
 
 matplotlib.use("TkAgg")
 
@@ -325,8 +327,8 @@ def main():
     # Set random seed
     np.random.seed(917)
 
-    train = np.genfromtxt('../ann-optimization/train.csv', delimiter=',')
-    test = np.genfromtxt('../ann-optimization/test.csv', delimiter=',')
+    train = pd.read_csv('../ann-optimization/train.csv').values
+    test = pd.read_csv('../ann-optimization/test.csv').values
 
     logger.info(f"Data loaded in {time() - start_time:.2f}s")
 
