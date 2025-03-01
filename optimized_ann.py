@@ -29,7 +29,7 @@ def grad_g(x):
     return gx * (1.0 - gx)
 
 
-def predict(Theta1, Theta2, X, use_gpu=True):
+def predict(Theta1, Theta2, X, use_torch=True):
     """ Predict labels in a trained three layer classification network.
     Input:
       Theta1       trained weights applied to 1st layer (hidden_layer_size x input_layer_size+1)
@@ -38,23 +38,32 @@ def predict(Theta1, Theta2, X, use_gpu=True):
     Output:
       prediction   label prediction
     """
-    if use_gpu and torch.cuda.is_available():
-        # GPU version
-        X_gpu = torch.from_numpy(X).cuda()
-        Theta1_gpu = torch.from_numpy(Theta1).cuda()
-        Theta2_gpu = torch.from_numpy(Theta2).cuda()
+    if use_torch:
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            device = torch.device('cuda')
+            print("device: ", device)
+        else:
+            device = torch.device('cpu')
+
+        # torch version
+        X_gpu = torch.from_numpy(X).to(device)
+        Theta1_gpu = torch.from_numpy(Theta1).to(device)
+        Theta2_gpu = torch.from_numpy(Theta2).to(device)
 
         m = X_gpu.shape[0]
-        a1 = torch.cat([torch.ones(m, 1).cuda(), X_gpu], dim=1)
+        a1 = torch.cat([torch.ones(m, 1).to(device), X_gpu], dim=1)
         a2 = torch.sigmoid(a1 @ Theta1_gpu.T)
-        a2 = torch.cat([torch.ones(m, 1).cuda(), a2], dim=1)
+        a2 = torch.cat([torch.ones(m, 1).to(device), a2], dim=1)
         a3 = torch.sigmoid(a2 @ Theta2_gpu.T)
 
         prediction = torch.argmax(a3, dim=1).cpu().numpy().reshape((m, 1))
 
         # Clean up GPU memory
-        torch.cuda.empty_cache()
+        if cuda_available:
+            torch.cuda.empty_cache()
     else:
+        print("no cuda used")
         # Original CPU version
         m = np.shape(X)[0]
         a1 = np.hstack((np.ones((m, 1)), X))
@@ -74,25 +83,32 @@ def reshape(theta, input_layer_size, hidden_layer_size, num_labels):
     return Theta1, Theta2
 
 
-def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, use_gpu=True):
+def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, use_torch=True):
     """ Neural net cost function with GPU acceleration option """
     Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
     m = len(y)
 
-    if use_gpu and torch.cuda.is_available():
-        # GPU version
-        X_gpu = torch.from_numpy(X).cuda()
-        Theta1_gpu = torch.from_numpy(Theta1).cuda()
-        Theta2_gpu = torch.from_numpy(Theta2).cuda()
+    if use_torch:
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            device = torch.device('cuda')
+            print("device: ", device)
+        else:
+            device = torch.device('cpu')
+
+        # torch version
+        X_gpu = torch.from_numpy(X).to(device)
+        Theta1_gpu = torch.from_numpy(Theta1).to(device)
+        Theta2_gpu = torch.from_numpy(Theta2).to(device)
 
         # Forward pass
-        a1 = torch.cat([torch.ones(m, 1).cuda(), X_gpu], dim=1)
+        a1 = torch.cat([torch.ones(m, 1).to(device), X_gpu], dim=1)
         a2 = torch.sigmoid(a1 @ Theta1_gpu.T)
-        a2 = torch.cat([torch.ones(m, 1).cuda(), a2], dim=1)
+        a2 = torch.cat([torch.ones(m, 1).to(device), a2], dim=1)
         a3 = torch.sigmoid(a2 @ Theta2_gpu.T)
 
         # One-hot encode y
-        y_mtx = torch.zeros(m, num_labels).cuda()
+        y_mtx = torch.zeros(m, num_labels).to(device)
         y_mtx[torch.arange(m), y.flatten()] = 1
 
         # Cost computation
@@ -104,7 +120,8 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
         result = J.cpu().item()
 
         # Clean up GPU memory
-        torch.cuda.empty_cache()
+        if cuda_available:
+            torch.cuda.empty_cache()
         return result
     else:
         # Original CPU version
@@ -124,29 +141,62 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
         return J
 
 
-def _gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels):
+def _gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels, use_torch=True):
     """Worker function for parallel gradient computation"""
-    Delta1 = np.zeros_like(Theta1)
-    Delta2 = np.zeros_like(Theta2)
 
-    # TODO: torch + vectorization
-    for t in batch_indices:
+
+    if use_torch:
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+
+        X_tensor = torch.from_numpy(X).to(device)
+        y_tensor = torch.from_numpy(y).to(device)
+        Theta1_tensor = torch.from_numpy(Theta1).to(device)
+        Theta2_tensor = torch.from_numpy(Theta2).to(device)
+
+        t = len(batch_indices)
+
         # Forward pass
-        a1 = X[t, :].reshape((Theta1.shape[1] - 1, 1))
-        a1 = np.vstack((1, a1))
-        z2 = Theta1 @ a1
-        a2 = g(z2)
-        a2 = np.vstack((1, a2))
-        a3 = g(Theta2 @ a2)
+        # directly using sigmoid here instead of g()
+        a1 = torch.cat((torch.ones(t, 1).to(device), X_tensor[batch_indices, :]), dim=1)
+        z2 = torch.matmul(a1, Theta1_tensor.T)
+        a2 = torch.sigmoid(z2)
+        a2 = torch.cat((torch.ones(t, 1).to(device), a2), dim=1)
+        z3 = torch.matmul(a2, Theta2_tensor.T)
+        a3 = torch.sigmoid(z3)
 
         # Backward pass
-        y_k = np.zeros((num_labels, 1))
-        y_k[y[t, 0].astype(int)] = 1
-        delta3 = a3 - y_k
-        delta2 = (Theta2[:, 1:].T @ delta3) * grad_g(z2)
+        y_mtx = torch.zeros(t, num_labels, dtype=torch.float32).to(device)
+        y_mtx[torch.arange(t), y_tensor[batch_indices].flatten().long()] = 1
+        delta3 = a3 - y_mtx
+        delta2 = torch.matmul(delta3, Theta2_tensor[:, 1:]) * (a2[:, 1:] * (1 - a2[:, 1:]))
+        Delta2 = torch.matmul(delta3.T, a2).cpu().numpy()
+        Delta1 = torch.matmul(delta2.T, a1).cpu().numpy()
 
-        Delta2 += delta3 @ a2.T
-        Delta1 += delta2 @ a1.T
+    else:
+        Delta1 = np.zeros_like(Theta1)
+        Delta2 = np.zeros_like(Theta2)
+
+        for t in batch_indices:
+            # Forward pass
+            a1 = X[t, :].reshape((Theta1.shape[1] - 1, 1))
+            a1 = np.vstack((1, a1))
+            z2 = Theta1 @ a1
+            a2 = g(z2)
+            a2 = np.vstack((1, a2))
+            a3 = g(Theta2 @ a2)
+
+            # Backward pass
+            y_k = np.zeros((num_labels, 1))
+            y_k[y[t, 0].astype(int)] = 1
+            delta3 = a3 - y_k
+            delta2 = (Theta2[:, 1:].T @ delta3) * grad_g(z2)
+
+            Delta2 += delta3 @ a2.T
+            Delta1 += delta2 @ a1.T
 
     return Delta1, Delta2
 
@@ -236,8 +286,8 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     # Update Plot
     if plt.get_fignums():  # Only if figure exists
         iters = np.arange(len(Js_train))
-        plt.clf()
-        plt.subplot(2, 1, 1)
+        # plt.clf()
+        # plt.subplot(2, 1, 1)
         im_size = 32
         pad = 4
         galaxies_image = np.zeros((3 * im_size, 6 * im_size + 2 * pad), dtype=int) + 255
@@ -250,20 +300,20 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
                 galaxies_image[ii:ii + im_size, jj:jj + im_size] = X[idx].reshape(im_size, im_size) * 255
                 my_label = 'E' if y_pred[idx] == 0 else 'S' if y_pred[idx] == 1 else 'I'
                 my_color = 'blue' if (y_pred[idx] == y[idx]) else 'red'
-                plt.text(jj + 2, ii + 10, my_label, color=my_color)
+                # plt.text(jj + 2, ii + 10, my_label, color=my_color)
                 if (y_pred[idx] == y[idx]):
                     plt.text(jj + 4, ii + 25, "✓", color='blue', fontsize=50)
-        plt.imshow(galaxies_image, cmap='gray')
-        plt.gca().axis('off')
-        plt.subplot(2, 1, 2)
-        plt.plot(iters, Js_test, 'r', label='test')
-        plt.plot(iters, Js_train, 'b', label='train')
-        plt.xlabel("iteration")
-        plt.ylabel("cost")
-        plt.xlim(0, 600)
-        plt.ylim(1, 2.1)
-        plt.gca().legend()
-        plt.pause(0.001)
+        # plt.imshow(galaxies_image, cmap='gray')
+        # plt.gca().axis('off')
+        # plt.subplot(2, 1, 2)
+        # plt.plot(iters, Js_test, 'r', label='test')
+        # plt.plot(iters, Js_train, 'b', label='train')
+        # plt.xlabel("iteration")
+        # plt.ylabel("cost")
+        # plt.xlim(0, 600)
+        # plt.ylim(1, 2.1)
+        # plt.gca().legend()
+        # plt.pause(0.001)
 
 
 @profile
@@ -346,7 +396,7 @@ def main():
     # Save figure if it exists
     if plt.get_fignums():
         plt.savefig('artificialneuralnetwork.png', dpi=240)
-        plt.show()
+        # # plt.show()
 
 
 if __name__ == "__main__":
