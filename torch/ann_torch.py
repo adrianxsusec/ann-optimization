@@ -4,6 +4,11 @@ from scipy import optimize
 from functools import partial
 import torch
 from line_profiler import profile
+from time import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 """
 Create Your Own Artificial Neural Network for Multi-class Classification (With Python)
@@ -36,7 +41,7 @@ def torch_grad_g(x):
     gx = torch.sigmoid(x)
     return gx * (1.0 - gx)
 
-
+@profile
 def predict(Theta1, Theta2, X):
     """ Predict labels in a trained three layer classification network.
     Input:
@@ -83,7 +88,7 @@ def reshape(theta, input_layer_size, hidden_layer_size, num_labels):
     Theta2 = theta[ncut:].reshape(num_labels, hidden_layer_size + 1)
     return Theta1, Theta2
 
-
+@profile
 def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
     """ Neural net cost function with GPU acceleration option """
     Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
@@ -150,10 +155,14 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
       grad                flattened vector of derivatives of the neural network
     """
     if use_torch:
+        # Pre-allocate GPU memory
+        X_torch = torch.empty(X.shape, dtype=torch.float64, device=device)
+        y_torch = torch.empty(y.shape, dtype=torch.float64, device=device)
 
-        X_torch = torch.from_numpy(X).to(device)
-        y_torch = torch.from_numpy(y).to(device)
-        theta_torch = torch.tensor(theta, dtype=torch.float64, requires_grad=True).to(device)
+        # Copy data directly to pre-allocated tensors
+        X_torch.copy_(torch.from_numpy(X).cuda(device=device))
+        y_torch.copy_(torch.from_numpy(y).cuda(device=device))
+        theta_torch = torch.tensor(theta, dtype=torch.float64, requires_grad=True).cuda(device=device)
 
         Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
         Theta1_torch = theta_torch[:hidden_layer_size * (input_layer_size + 1)].view(hidden_layer_size, input_layer_size + 1)
@@ -218,6 +227,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
         # Flatten gradients
         grad = torch.cat((Theta1_grad.flatten(), Theta2_grad.flatten()))
         grad = grad.detach().cpu().numpy()
+        torch.cuda.empty_cache()
 
     else:
         # unflatten theta
@@ -269,7 +279,7 @@ theta_best = []
 Js_train = np.array([])
 Js_test = np.array([])
 
-
+@profile
 def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label, theta_k):
     """ Calculate some stats per iteration and update plot """
     global N_iter
@@ -277,6 +287,9 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     global theta_best
     global Js_train
     global Js_test
+
+    start_time = time()
+
     # unflatten theta
     Theta1, Theta2 = reshape(theta_k, input_layer_size, hidden_layer_size, num_labels)
     # training data stats
@@ -290,10 +303,12 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     accuracy_test = np.sum(1. * (test_pred == test_label)) / len(test_label)
     Js_test = np.append(Js_test, J_test)
     # print stats
-    print(
-        'iter={:3d}:  Jtrain= {:0.4f} acc= {:0.2f}%  |  Jtest= {:0.4f} acc= {:0.2f}%'.format(N_iter, J, 100 * accuracy,
-                                                                                             J_test,
-                                                                                             100 * accuracy_test))
+    # Print stats with timing
+    logger.info(
+        f'iter={N_iter:3d} ({time() - start_time:.2f}s): '
+        f'Jtrain={J:0.4f} acc={100 * accuracy:0.2f}% | '
+        f'Jtest={J_test:0.4f} acc={100 * accuracy_test:0.2f}%'
+    )
     N_iter += 1
     # Update theta_best
     if (J_test < J_min):
@@ -333,14 +348,15 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
 @profile
 def main():
     """ Artificial Neural Network for classifying galaxies """
-
+    start_time = time()
+    logger.info("Starting neural network training...")
     # set the random number generator seed
     np.random.seed(917)
 
     # Load the training and test datasets
-    train = np.genfromtxt('train.csv', delimiter=',')
-    test = np.genfromtxt('test.csv', delimiter=',')
-
+    train = np.genfromtxt('./train.csv', delimiter=',')
+    test = np.genfromtxt('./test.csv', delimiter=',')
+    logger.info(f"Data loaded in {time() - start_time:.2f}s")
     # get labels (0=Elliptical, 1=Spiral, 2=Irregular)
     train_label = train[:, 0].reshape(len(train), 1)
     test_label = test[:, 0].reshape(len(test), 1)
@@ -381,10 +397,14 @@ def main():
     # prep figure
     fig = plt.figure(figsize=(6, 6), dpi=80)
 
+    logger.info("Starting optimization...")
+    opt_start_time = time()
     # Minimize the cost function using a nonlinear conjugate gradient algorithm
     args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)  # parameter values
     cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
     theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=50)
+
+    logger.info(f"Optimization completed in {time() - opt_start_time:.2f}s")
 
     # unflatten theta
     Theta1, Theta2 = reshape(theta_best, input_layer_size, hidden_layer_size, num_labels)
@@ -393,10 +413,13 @@ def main():
     train_pred = predict(Theta1, Theta2, train)
     test_pred = predict(Theta1, Theta2, test)
 
-    # Print accuracy of predictions
-    print('accuracy on training set =', np.sum(1. * (train_pred == train_label)) / len(train_label))
-    print('accuracy on test set =', np.sum(1. * (test_pred == test_label)) / len(test_label))
+    final_train_accuracy = np.sum(1. * (train_pred == train_label)) / len(train_label)
+    final_test_accuracy = np.sum(1. * (test_pred == test_label)) / len(test_label)
+    logger.info(f'Final accuracy on training set = {final_train_accuracy:.4f}')
+    logger.info(f'Final accuracy on test set = {final_test_accuracy:.4f}')
 
+    total_time = time() - start_time
+    logger.info(f"Total training time: {total_time:.2f}s")
     # Save figure
     # plt.savefig('artificialneuralnetwork.png', dpi=240)
     # plt.show()

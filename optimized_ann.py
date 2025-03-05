@@ -31,7 +31,7 @@ def grad_g(x):
     return gx * (1.0 - gx)
 
 
-def predict(Theta1, Theta2, X, use_torch=True):
+def predict(Theta1, Theta2, X, use_torch=False):
     """ Predict labels in a trained three layer classification network.
     Input:
       Theta1       trained weights applied to 1st layer (hidden_layer_size x input_layer_size+1)
@@ -85,7 +85,7 @@ def reshape(theta, input_layer_size, hidden_layer_size, num_labels):
     return Theta1, Theta2
 
 
-def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, use_torch=True):
+def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, use_torch=False):
     """ Neural net cost function with GPU acceleration option """
     Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
     m = len(y)
@@ -143,7 +143,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
         return J
 
 
-def _gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels, use_torch=True):
+def gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels, use_torch=False):
     """Worker function for parallel gradient computation"""
 
 
@@ -202,9 +202,65 @@ def _gradient_worker(batch_indices, X, y, Theta1, Theta2, num_labels, use_torch=
 
     return Delta1, Delta2
 
+@profile
+def native_gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
+    """ Neural net cost function gradient for a three layer classification network.
+    Input:
+      theta               flattened vector of neural net model parameters
+      input_layer_size    size of input layer
+      hidden_layer_size   size of hidden layer
+      num_labels          number of labels
+      X                   matrix of training data
+      y                   vector of training labels
+      lmbda               regularization term
+    Output:
+      grad                flattened vector of derivatives of the neural network
+    """
+
+    # unflatten theta
+    Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
+
+    # number of training values
+    m = len(y)
+
+    # Backpropagation: calculate the gradients Theta1_grad and Theta2_grad:
+
+    Delta1 = np.zeros((hidden_layer_size, input_layer_size + 1))
+    Delta2 = np.zeros((num_labels, hidden_layer_size + 1))
+
+    for t in range(m):
+        # forward
+        a1 = X[t, :].reshape((input_layer_size, 1))
+        a1 = np.vstack((1, a1))  # +bias
+        z2 = Theta1 @ a1
+        a2 = g(z2)
+        a2 = np.vstack((1, a2))  # +bias
+        a3 = g(Theta2 @ a2)
+
+        # compute error for layer 3
+        y_k = np.zeros((num_labels, 1))
+        y_k[y[t, 0].astype(int)] = 1
+        delta3 = a3 - y_k
+        Delta2 += (delta3 @ a2.T)
+
+        # compute error for layer 2
+        delta2 = (Theta2[:, 1:].T @ delta3) * grad_g(z2)
+        Delta1 += (delta2 @ a1.T)
+
+    Theta1_grad = Delta1 / m
+    Theta2_grad = Delta2 / m
+
+    # add regularization
+    Theta1_grad[:, 1:] += (lmbda / m) * Theta1[:, 1:]
+    Theta2_grad[:, 1:] += (lmbda / m) * Theta2[:, 1:]
+
+    # flatten gradients
+    grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten()))
+
+    return grad
 
 @profile
-def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
+def distributed_gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
     """ Parallel gradient computation using multiprocessing """
     Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
     m = len(y)
@@ -218,7 +274,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
     # Parallel processing
     with mp.Pool(num_processes) as pool:
         try:
-            worker = partial(_gradient_worker,
+            worker = partial(gradient_worker,
                              X=X, y=y,
                              Theta1=Theta1,
                              Theta2=Theta2,
@@ -378,7 +434,7 @@ def main():
 
     args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)
     cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-    theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=50)
+    theta = optimize.fmin_cg(cost_function, theta0, fprime=distributed_gradient, args=args, callback=cbf, maxiter=50)
 
     logger.info(f"Optimization completed in {time() - opt_start_time:.2f}s")
 
