@@ -200,10 +200,11 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
         J_min = J_test
 
 
-def main():
+def main(max_iter):
     """ Artificial Neural Network for classifying galaxies with multiprocessing optimization """
     start_time = time()
     logger.info("Starting neural network training with multiprocessing optimization...")
+    logger.info(f"max iter={max_iter}")
 
     # Set random seed
     np.random.seed(917)
@@ -260,7 +261,7 @@ def main():
 
     args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)
     cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-    theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=50)
+    theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=max_iter)
 
     logger.info(f"Optimization completed in {time() - opt_start_time:.2f}s")
 
@@ -281,4 +282,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(max_iter=50)

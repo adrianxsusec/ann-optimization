@@ -291,13 +291,15 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
         J_min = J_test
 
 
-def main():
+def main(max_iter):
     """ Artificial Neural Network for classifying galaxies with GPU optimization """
     global X_train_gpu, X_test_gpu, y_train_gpu, y_test_gpu, X_train_shape, X_test_shape
     global N_iter, J_min, theta_best, Js_train, Js_test
 
     start_time = time()
     logger.info("Starting neural network training with GPU optimization...")
+    logger.info(f"max iter={max_iter}")
+
 
     # Set random seed
     np.random.seed(917)
@@ -389,4 +391,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(max_iter=50)
