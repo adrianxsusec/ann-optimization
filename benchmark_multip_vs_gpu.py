@@ -7,6 +7,7 @@ import os
 import sys
 
 # Import the implementations
+import ann_unoptimized
 import multiprocessing_cpu
 import torch_improvements
 import torch_improvements_gpu
@@ -32,6 +33,7 @@ def run_benchmark(iterations=[10, 20, 50], runs=3):
     results = []
 
     implementations = [
+        ("Unoptimized", ann_unoptimized),
         ("Multiprocessing", multiprocessing_cpu),
         ("Torch-CPU", torch_improvements),
         ("Torch-GPU", torch_improvements_gpu),
@@ -83,7 +85,7 @@ def plot_results(results):
     plt.figure(figsize=(12, 8))
 
     # Plot training time vs iterations for each implementation
-    plt.subplot(2, 1, 1)
+    plt.subplot(5, 1, 1)
     implementations = results['Implementation'].unique()
     iterations = results['Iterations'].unique()
 
@@ -100,7 +102,7 @@ def plot_results(results):
     plt.legend()
 
     # Plot speedup ratio vs iterations
-    plt.subplot(2, 1, 2)
+    plt.subplot(5, 1, 2)
 
     baseline = results[results['Implementation'] == implementations[0]]
 
@@ -134,8 +136,10 @@ def main():
     logger.info("Results saved to benchmark_results.csv")
 
     # Plot results
-    plot_results(results)
-
+    try:
+        plot_results(results)
+    except Exception as e:
+        print(e)
     # Print summary
     print("\nBenchmark Summary:")
     print(results)

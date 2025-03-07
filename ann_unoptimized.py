@@ -2,12 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import optimize
 from functools import partial
-from numba import jit
-import logging
-from line_profiler import profile
 import pandas as pd
 from time import time
-
+import logging
 
 """
 Create Your Own Artificial Neural Network for Multi-class Classification (With Python)
@@ -20,12 +17,12 @@ Create and train your own artificial neural network to classify images of galaxi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@jit(nopython=True)
+
 def g(x):
     """ sigmoid function """
     return 1.0 / (1.0 + np.exp(-x))
 
-@jit(nopython=True)
+
 def grad_g(x):
     """ gradient of sigmoid function """
     gx = g(x)
@@ -53,15 +50,15 @@ def predict(Theta1, Theta2, X):
     prediction = np.argmax(a3, 1).reshape((m, 1))
     return prediction
 
-@jit(nopython=True)
+
 def reshape(theta, input_layer_size, hidden_layer_size, num_labels):
     """ reshape theta into Theta1 and Theta2, the weights of our neural network """
     ncut = hidden_layer_size * (input_layer_size + 1)
-    Theta1 = np.ascontiguousarray(theta[0:ncut].reshape(hidden_layer_size, input_layer_size + 1))
-    Theta2 = np.ascontiguousarray(theta[ncut:].reshape(num_labels, hidden_layer_size + 1))
+    Theta1 = theta[0:ncut].reshape(hidden_layer_size, input_layer_size + 1)
+    Theta2 = theta[ncut:].reshape(num_labels, hidden_layer_size + 1)
     return Theta1, Theta2
 
-@jit(nopython=True)
+
 def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
     """ Neural net cost function for a three layer classification network.
     Input:
@@ -101,6 +98,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 
     return J
 
+
 def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
     """ Neural net cost function gradient for a three layer classification network.
     Input:
@@ -117,6 +115,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
 
     # unflatten theta
     Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
+
     # number of training values
     m = len(y)
 
@@ -125,7 +124,24 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
     Delta1 = np.zeros((hidden_layer_size, input_layer_size + 1))
     Delta2 = np.zeros((num_labels, hidden_layer_size + 1))
 
-    Delta1, Delta2 = grad_loop(Delta1, Delta2, Theta1, Theta2, X, input_layer_size, m, num_labels, y)
+    for t in range(m):
+        # forward
+        a1 = X[t, :].reshape((input_layer_size, 1))
+        a1 = np.vstack((1, a1))  # +bias
+        z2 = Theta1 @ a1
+        a2 = g(z2)
+        a2 = np.vstack((1, a2))  # +bias
+        a3 = g(Theta2 @ a2)
+
+        # compute error for layer 3
+        y_k = np.zeros((num_labels, 1))
+        y_k[y[t, 0].astype(int)] = 1
+        delta3 = a3 - y_k
+        Delta2 += (delta3 @ a2.T)
+
+        # compute error for layer 2
+        delta2 = (Theta2[:, 1:].T @ delta3) * grad_g(z2)
+        Delta1 += (delta2 @ a1.T)
 
     Theta1_grad = Delta1 / m
     Theta2_grad = Delta2 / m
@@ -138,31 +154,6 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
     grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten()))
 
     return grad
-
-@jit(nopython=True)
-def grad_loop(Delta1, Delta2, Theta1, Theta2, X, input_layer_size, m, num_labels, y):
-    for t in range(m):
-        # forward
-        # a1 = X[t, :].reshape((input_layer_size, 1))
-        a1 = np.empty((input_layer_size, 1))
-        a1[:] = X[t, :][:, np.newaxis]
-        a1 = np.vstack((np.ones((1, 1)), a1))  # +bias
-        z2 = Theta1 @ a1
-        a2 = g(z2)
-        a2 = np.vstack((np.ones((1, 1)), a2))  # +bias
-        a3 = g(Theta2 @ a2)
-
-        # compute error for layer 3
-        y_k = np.zeros((num_labels, 1))
-        y_k[int(y[t, 0])] = 1
-        delta3 = np.ascontiguousarray(a3 - y_k)
-        Delta2 += (delta3 @ a2.T)
-
-        # compute error for layer 2
-        delta2 = (np.ascontiguousarray(Theta2[:, 1:].T) @ delta3) * grad_g(z2) # 29.42s wo contiguous
-        # delta2 = (Theta2[:, 1:].copy().T @ delta3.copy()) * grad_g(z2) # 21.1s
-        Delta1 += (delta2 @ a1.T)
-    return Delta1, Delta2
 
 
 N_iter = 1
@@ -179,8 +170,6 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     global theta_best
     global Js_train
     global Js_test
-
-    start_time = time()
     # unflatten theta
     Theta1, Theta2 = reshape(theta_k, input_layer_size, hidden_layer_size, num_labels)
     # training data stats
@@ -193,14 +182,11 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     test_pred = predict(Theta1, Theta2, test)
     accuracy_test = np.sum(1. * (test_pred == test_label)) / len(test_label)
     Js_test = np.append(Js_test, J_test)
-
-    # Print stats with timing
-    logger.info(
-        f'iter={N_iter:3d} ({time() - start_time:.2f}s): '
-        f'Jtrain={J:0.4f} acc={100 * accuracy:0.2f}% | '
-        f'Jtest={J_test:0.4f} acc={100 * accuracy_test:0.2f}%'
-    )
-
+    # print stats
+    print(
+        'iter={:3d}:  Jtrain= {:0.4f} acc= {:0.2f}%  |  Jtest= {:0.4f} acc= {:0.2f}%'.format(N_iter, J, 100 * accuracy,
+                                                                                             J_test,
+                                                                                             100 * accuracy_test))
     N_iter += 1
     # Update theta_best
     if (J_test < J_min):
