@@ -9,6 +9,8 @@ import sys
 # Import the implementations
 import multiprocessing_cpu
 import torch_improvements
+import torch_improvements_gpu
+import jit_opt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -31,7 +33,9 @@ def run_benchmark(iterations=[10, 20, 50], runs=3):
 
     implementations = [
         ("Multiprocessing", multiprocessing_cpu),
-        ("GPU", torch_improvements),
+        ("Torch-CPU", torch_improvements),
+        ("Torch-GPU", torch_improvements_gpu),
+        ("Numba", jit_opt)
     ]
 
     for name, implementation in implementations:

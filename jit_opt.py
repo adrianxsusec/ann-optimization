@@ -238,7 +238,7 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
     # plt.pause(0.001)
 
 
-def main():
+def main(max_iter=50):
     """ Artificial Neural Network for classifying galaxies """
 
     start_time = time()
@@ -309,7 +309,7 @@ def main():
     # Minimize the cost function using a nonlinear conjugate gradient algorithm
     args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)  # parameter values
     cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-    theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=50)
+    theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=max_iter)
 
 
     logger.info(f"Optimization completed in {time() - opt_start_time:.2f}s")
